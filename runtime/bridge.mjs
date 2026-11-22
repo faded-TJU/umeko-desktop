@@ -12,6 +12,7 @@ import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, c
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
+import { createToolPreparation } from "./tool-preparation.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
@@ -279,8 +280,11 @@ async function bindSession(session) {
   };
   session.agent.onPayload = configurePayload;
   const httpRetryBoundary = bindHttpRetryBoundary(session);
+  const toolPreparation = createToolPreparation(emit);
   const unbind = session.subscribe(event => {
     httpRetryBoundary.observe(event);
+    if (blockedSessions.has(session)) toolPreparation.clear();
+    else toolPreparation.observe(event);
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -349,6 +353,7 @@ async function bindSession(session) {
     compactionFailures.delete(session);
     clearTimeout(retryTimer);
     httpRetryBoundary.close();
+    toolPreparation.clear();
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };

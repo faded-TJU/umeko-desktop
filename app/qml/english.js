@@ -1,5 +1,6 @@
 .pragma library
 var strings = {
+    "正在生成工具参数": "Preparing tool arguments",
     "模型组": "Model group",
     "启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。": "Select the model group in chat once it is enabled. If a model loses its connection, hits a rate limit, or runs out of quota, the group switches to the next available model in order.",
     "启用模型组": "Enable model group",

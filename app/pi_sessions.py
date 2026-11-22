@@ -71,6 +71,7 @@ class SessionState:
     phase: str = "idle"
     action: str = ""
     prompt_started: float | None = None
+    preparing_tools: int = 0
     prepared_task: str = ""
     task_attempt: int = 0
     task_record_error: bool = False

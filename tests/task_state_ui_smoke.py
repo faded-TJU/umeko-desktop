@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 profile = tempfile.TemporaryDirectory(prefix="umeko-task-state-ui-")
 os.environ["UMEKO_DATA_DIR"] = profile.name
+os.environ["PI_CODING_AGENT_DIR"] = str(Path(profile.name) / "agent")
 
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtQml import QQmlComponent
@@ -75,6 +76,46 @@ def assert_turn(state, label, icon=None):
     if not backend.loading:
         status_text = find("composerStatus")
         assert not status_text.isVisible() and not status_text.property("text"), "Permanent shortcut hint returned"
+
+
+def check_tool_preparation():
+    record = live_turn("ui-tool-preparation")
+    record.title = "工具调用演示"
+    record.messages[0]["text"] = "读取演示文件"
+    record.messages[1]["text"] = "我先检查文件内容。"
+    backend._index_record(record)
+    before = copy.deepcopy(record.messages)
+    backend._handle_pi_event(record, {"type": "tool_preparation", "count": 2})
+    settle()
+    assert_turn("running", "正在生成工具参数")
+    assert record.messages == before and not record.approval
+    assert backend.turnStatus["preparingTools"] == 2
+    out = ROOT / "build/tool-preparation"
+    out.mkdir(parents=True, exist_ok=True)
+    assert window.grabWindow().save(str(out / "main-preparing-zh.png"))
+    backend.setLanguage("en")
+    settle()
+    assert_turn("running", "Preparing tool arguments")
+    assert window.grabWindow().save(str(out / "main-preparing-en.png"))
+    backend.setLanguage("zh")
+    backend._handle_pi_event(record, {"type": "tool_preparation", "count": 0})
+    backend._handle_pi_event(record, {"type": "tool", "name": "fixture_noop",
+                                    "id": "fixture-tool", "args": {"value": "demo"}, "state": "running"})
+    settle()
+    assert_turn("running", "运行中")
+    cards = [tool for row in record.messages for tool in row.get("tools", [])]
+    assert len(cards) == 1 and cards[0]["id"] == "fixture-tool" and cards[0]["state"] == "running"
+    backend._handle_pi_event(record, {"type": "tool_preparation", "count": 1})
+    settle()
+    backend.stop()
+    backend._handle_pi_event(record, {"type": "tool_preparation", "count": 1})
+    settle()
+    assert backend.turnStatus["preparingTools"] == 0
+    assert_turn("stopping", "正在停止")
+    backend._handle_pi_event(record, {"type": "done"})
+    settle()
+    assert "preparingTools" not in backend.turnStatus
+    print("TOOL_PREPARATION_UI_OK: isolated metadata, bilingual status, real card intact, stop clears")
 
 
 def check_turn_lifecycle():
@@ -206,7 +247,8 @@ def check_legacy_unread():
 
 try:
     if "--legacy-only" not in sys.argv and "--extra-only" not in sys.argv:
-        check_turn_lifecycle()
+        check_tool_preparation()
+    check_turn_lifecycle()
     if "--legacy-only" not in sys.argv:
         check_child_status_and_translations()
     if "--extra-only" not in sys.argv:

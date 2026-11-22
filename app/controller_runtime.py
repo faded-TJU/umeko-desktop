@@ -28,7 +28,8 @@ class PiControllerMixin:
             elapsed = max(0, time.monotonic() - record.prompt_started)
             state = getattr(record, 'stop_state', '')
             return {'state': 'stopping' if record.cancelled else 'running', 'stopStage': state, 'elapsed': elapsed,
-                'startedAt': (time.time() - elapsed) * 1000}
+                'startedAt': (time.time() - elapsed) * 1000,
+                'preparingTools': record.preparing_tools if not record.cancelled else 0}
         saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
         if saved:
             return dict(saved)
@@ -285,6 +286,7 @@ class PiControllerMixin:
             self._pool.retire(record)
         self._reconcile_reasoning(record)
         record.action, record.failed, record.cancelled = action, False, False
+        record.preparing_tools = 0
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
@@ -445,6 +447,16 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == "tool_preparation":
+            count = event.get("count")
+            if (type(count) is int and 0 <= count <= 64 and record.busy
+                    and not record.cancelled and record.preparing_tools != count):
+                record.preparing_tools = count
+                if visible and not self._streaming_timer.isActive():
+                    self._streaming_timer.start()
+            return
+        if kind in ("assistant_start", "done", "exit"):
+            record.preparing_tools = 0
         if kind == 'ready' and event.get('warm'):
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None
@@ -817,6 +829,7 @@ class PiControllerMixin:
         record = self._view
         if record.phase == "running" and not record.cancelled:
             record.cancelled = True
+            record.preparing_tools = 0
             token = uuid.uuid4().hex
             record.stop_token, record.stop_state = token, 'stop_requested'
             record.network_retry = {}
